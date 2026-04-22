@@ -138,7 +138,7 @@ This is a **data-driven approximation**, not a hydraulic model. Limitations:
 - **Rainfall proxy only** — no soil saturation, drainage capacity, or elevation features
 - **No recall measurement** — silent floods not reported in ST or Telegram are invisible to this pipeline
 
-PUB operates far more sophisticated hydraulic models. This project demonstrates the methodology on open data.
+This project demonstrates how open, publicly available data can be used to build a reproducible flood prediction baseline using modern ML methodology.
 
 ---
 
