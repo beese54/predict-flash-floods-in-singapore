@@ -48,6 +48,9 @@ groundsource_2026.parquet
 # Claude Code project files
 .claude/
 
+# Personal reference files
+linkedin_post.txt
+
 # Temporary files
 *.tmp
 *.bak
