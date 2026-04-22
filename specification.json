@@ -1,0 +1,93 @@
+{
+  "project": "Singapore Flash Flood Prediction System",
+  "version": "1.0.0",
+  "description": "End-to-end ML pipeline predicting flash flood probability at 1km x 1km resolution across Singapore, 1-6 hours ahead, using NEA rainfall data and LLM-extracted flood event labels.",
+  "methodology_basis": "Adapted from Groundsource paper (Google Research, 2026) — news article LLM extraction applied to Singapore-specific sources.",
+
+  "data_sources": [
+    {
+      "id": "straits_times",
+      "description": "Straits Times newspaper flood event articles (Singapore)",
+      "format": "XLSX metadata + scraped HTML text",
+      "records": 98,
+      "date_range": "2010-present",
+      "effective_range": "2016-12-01 onward (aligned with NEA data)"
+    },
+    {
+      "id": "pub_telegram",
+      "description": "PUB Singapore flood alert Telegram channel messages",
+      "format": "Telethon scrape -> JSON",
+      "records": "Unknown (est. hundreds)",
+      "date_range": "2022-present"
+    },
+    {
+      "id": "nea_rainfall",
+      "description": "NEA 5-minute rainfall readings at ~60 weather stations across Singapore",
+      "format": "data.gov.sg API -> parquet shards",
+      "date_range": "2016-12-01 to present",
+      "api_endpoint": "https://api-open.data.gov.sg/v2/real-time/api/rainfall"
+    }
+  ],
+
+  "label_schema": {
+    "file": "data/processed/labels.parquet",
+    "columns": {
+      "grid_cell_id": "string — unique ID for 1km x 1km grid cell",
+      "timestamp": "datetime — 5-minute interval",
+      "flood": "int (0 or 1) — 1 if a verified flood event occurs within next 6 hours at this cell"
+    },
+    "class_balance": "Expected positive rate << 1% (heavy imbalance)"
+  },
+
+  "feature_schema": {
+    "file": "data/processed/ml_dataset.parquet",
+    "rainfall_features": [
+      "rain_30min", "rain_1hr", "rain_3hr", "rain_6hr", "rain_12hr", "rain_24hr",
+      "max_intensity_1hr", "rain_delta_30min"
+    ],
+    "temporal_features": ["hour", "month", "day_of_week", "is_wet_season"],
+    "spatial_features": ["grid_cell_id", "lat_centroid", "lon_centroid"],
+    "interpolation_method": "Inverse Distance Weighting (IDW), search radius 10km, min 2 stations"
+  },
+
+  "model": {
+    "algorithm": "LightGBM (binary classification)",
+    "imbalance_strategy": "scale_pos_weight = n_negatives / n_positives",
+    "train_split": "2016-12-01 to 2022-12-31",
+    "val_split": "2023-01-01 to 2023-12-31",
+    "test_split": "2024-01-01 to 2026-02-28",
+    "primary_metric": "PR-AUC",
+    "secondary_metrics": ["AUC-ROC", "F1 @ optimal threshold"]
+  },
+
+  "llm_extraction": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "prompt_source": "Adapted from Groundsource paper (user-provided prompt)",
+    "output_schema": {
+      "flood_dates": "list of YYYY-MM-DD strings",
+      "is_verifiable_flood": "boolean",
+      "flooded_locations": "list of location strings",
+      "location_matches": "list of {location, all_mids_from_webref_match} objects"
+    },
+    "location_reference": "data/processed/sg_locations.json (Singapore-specific MID substitute)"
+  },
+
+  "frontend": {
+    "framework": "Streamlit",
+    "entrypoint": "app/app.py",
+    "pages": [
+      "flood_map — Interactive Singapore flood probability choropleth",
+      "event_browser — Historical verified flood event table + map",
+      "model_dashboard — AUC-ROC, PR curve, feature importance",
+      "rainfall_explorer — NEA station time-series with flood overlays"
+    ]
+  },
+
+  "api_key_policy": {
+    "storage": ".env file (never committed to Git)",
+    "loading": "python-dotenv via src/utils.py",
+    "committed_template": ".env.example (placeholder values only)",
+    "git_protection": "pre-commit hook scanning for sk- patterns"
+  }
+}

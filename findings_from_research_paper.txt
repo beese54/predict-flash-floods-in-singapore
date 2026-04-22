@@ -1,0 +1,85 @@
+Natural disasters pose a continuous threat to global populations and economies 1;2
+, with floods ranking among the most frequent and destructive of these hazards 3
+. Mitigating flood risks and hazards
+is a core objective of many areas of research, including the training and evaluation of hydrological
+forecast models 4;5
+, climate change attribution studies 6–9
+, future risk projection10, and disaster risk
+management 11;12. Progress across these diverse domains often depends on robust historical baselines; specifically, records of past flood events are needed to validate models and ground theoretical
+projections in empirical observations.
+
+The construction of the Groundsource dataset follows a four-stage automated pipeline:
+- Raw News Article Ingestion: Publicly available web articles mentioning floods are aggregated
+using Google’s WebRef named entity recognition system. For each identified URL, the core article
+text and publication date are extracted, and initial geographic location entities are annotated.
+- LLM-Based Extraction (Gemini Analysis): The raw text is processed using Gemini (version 3
+Flash) 27–29 to identify structured data. The model determines whether the article reports a specific, actual flood event and subsequently extracts the precise dates and local geographic entities
+affected.
+Geocoding and Spatial Mapping: The specific location names extracted by the LLM are mapped
+to standardized spatial polygons using the Google Maps Geocoding API 30
+.
+- Aggregation and Filtering: The extracted location-date pairs are aggregated into cohesive spatiotemporal events. Entries reporting the same location on consecutive days are concatenated,
+and morphological filters are applied to remove implausible geometries and erroneous records.
+
+To extract the relevant text from the filtered URLs, it is necessary to discard extraneous web elements such as navigation menus, advertisements, and HTML formatting. We utilized the internal API
+of the Google Read Aloud User-agent 31 for this task. This service, originally designed to parse web
+documents for text-to-speech applications, effectively isolates the primary textual content of an article
+and extracts its corresponding publication date.
+The Read Aloud API currently supports 80 widely spoken languages; articles written in unsupported
+languages, or those hosted on websites that block automated agents, are discarded. This extraction
+step narrows the dataset to approximately 7.5 million accessible articles. To standardize the text for
+downstream processing, all non-English articles are translated into English using the Google Cloud
+Translation API 32. Finally, we apply the WebRef system to both the original and translated texts to
+identify and extract all named entities classified as geographic locations. These extracted location
+tags are stored alongside the article text to serve as a candidate pool, which the LLM evaluates in the
+subsequent phase to pinpoint the precise sites of flooding.
+
+Extracting structured spatiotemporal event data from unstructured journalistic text presents significant NLP challenges. Simple keyword-matching algorithms are insufficient because causal links between mentioned locations, timeframes, and the actual flood event are frequently ambiguous in news
+reports. Furthermore, flood terminology varies across regions; for example, the words “street flood”
+might describe a minor infrastructure failure (such as a burst water main) in one country, but significant pluvial flooding in another. Journalistic reporting also exhibits highly variable spatial and temporal
+granularity. Articles may report flooding across an entire large administrative district without specifying the affected towns, or detail specific inundated intersections without broader geographic context.
+Temporally, reports often rely on relative references (e.g., “recently” or “for several days”) which must
+be correctly anchored to the article’s publication date to determine the precise timing of the event.
+To overcome these complexities, we developed a structured prompt for the Gemini LLM. To engineer and formally evaluate this prompt, a ground-truth dataset was constructed by manually annotating 250 randomly selected news articles. Human raters evaluated each article to document four key
+elements: (1) whether the text reported a specific, verifiable flood event; (2) the precise dates of the
+flooding; (3) the granular names of affected locations; and (4) the corresponding geographic identifiers
+within the Google Maps database. This annotated corpus was divided equally such that 125 articles
+were used for prompt engineering, while the remaining 125 were reserved to evaluate the extraction
+pipeline’s precision and recall.
+The engineered prompt guides the LLM through a strict, four-step analytical pipeline to ensure data
+quality and standardization. The output is a single, structured JSON object containing the extracted
+variables. The full prompt is reproduced in Appendix A, and the steps encoded into the prompt are
+summarized as follows:
+3
+1. Classification (Filtering): The model first evaluates the article to confirm it describes a singular,
+actual, and ongoing or past flood event. Articles discussing future flood warnings, infrastructural
+preparations, risk modeling, or multiple disjointed events are immediately rejected to prevent
+false positives.
+2. Temporal Extraction: If a valid event is confirmed, the model identifies specific dates on which
+flooding occurred. The LLM is explicitly instructed to anchor relative temporal references (e.g.,
+“last Tuesday”) against the provided article publication date. To prevent logging speculative
+events, dates extending past the publication date are strictly excluded.
+3. Spatial Extraction: The model identifies granular geographic locations explicitly described as
+inundated, submerged, or flooded. To maintain high spatial resolution, broader regional mentions (e.g., entire countries) and locations merely described as “at risk” are ignored.
+4. Location Reconciliation: Finally, the extracted localized names are matched against the pool of
+candidate WebRef location entities generated during the ingestion phase. This resolves naming
+variations (e.g., matching “LDN” to “London”) and ties the unstructured text to standardized geographic identification codes.
+
+2.3 Geocoding and Spatial Mapping
+To assign geographic boundaries to the extracted flood events, we process the location data output
+by the LLM. Initially, the system verifies whether the LLM successfully linked the flooded location to a
+specific WebRef entity code during the reconciliation step. When a valid match is present, the corresponding spatial polygons are directly retrieved from the WebRef index. If the LLM could not reconcile
+the location with a WebRef entity, the raw text string of the flooded location is passed to the Google
+Maps Geocoding API 30, which converts the location name into a spatial polygon.
+Occasionally, the Google Maps database does not contain a defined polygon boundary for a highly
+specific or localized identifier (such as a minor street intersection or a small village), and instead returns a single point coordinate. In these instances, a small spatial buffer of 0.001◦
+is applied around
+the returned point to generate a representative, two-dimensional geometry suitable for downstream
+spatial analysis
+
+ Spatiotemporal Distributions and Biases
+Temporally, the dataset exhibits a recency bias. Approximately 64% of the recorded flood events occurred between 2020 and 2025, and 15% occurred in 2025 alone. As illustrated in Figure 1, this temporal distribution closely correlates with the volume of flood-related news URLs ingested over time.
+This trend does not necessarily imply a sudden global increase in the frequency of physical flooding
+events; rather, it primarily reflects the exponential growth of digitized, publicly accessible news media,
+the relative scarcity of digitized archival news databases for earlier decades, and the tendency for older
+online news articles to go offline over time, thereby excluding them from our dataset.

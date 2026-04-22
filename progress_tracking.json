@@ -1,0 +1,90 @@
+{
+  "project": "Singapore Flash Flood Prediction",
+  "last_updated": "2026-04-21",
+  "phases": [
+    {
+      "phase": "A",
+      "name": "Project Scaffolding & Security",
+      "tasks": [
+        {"id": "A1", "name": "Create directory structure", "status": "Completed"},
+        {"id": "A2", "name": "Write requirements.txt", "status": "Completed"},
+        {"id": "A3", "name": "Write config.yaml", "status": "Completed"},
+        {"id": "A4", "name": "Write .env.example", "status": "Completed"},
+        {"id": "A5", "name": "Write .gitignore", "status": "Completed"},
+        {"id": "A6", "name": "Write init.sh", "status": "Completed"},
+        {"id": "A7", "name": "Write Harness deliverables (specification.json, definition_of_done.md, progress_tracking.json)", "status": "Completed"},
+        {"id": "A8", "name": "Write src/utils.py (API client factory)", "status": "Completed"}
+      ]
+    },
+    {
+      "phase": "B",
+      "name": "Article Text Collection",
+      "tasks": [
+        {"id": "B1", "name": "src/collect/scrape_straits_times.py", "status": "Completed"},
+        {"id": "B2", "name": "src/collect/pub_telegram_scraper.py", "status": "Completed"}
+      ]
+    },
+    {
+      "phase": "C",
+      "name": "Singapore Location Reference Database",
+      "tasks": [
+        {"id": "C1", "name": "src/preprocess/build_sg_location_ref.py", "status": "Pending"}
+      ]
+    },
+    {
+      "phase": "D",
+      "name": "LLM Extraction Pipeline",
+      "tasks": [
+        {"id": "D1", "name": "src/extract/run_extraction.py", "status": "Pending"}
+      ]
+    },
+    {
+      "phase": "E",
+      "name": "Geocoding & Grid → Labels",
+      "tasks": [
+        {"id": "E1", "name": "src/preprocess/create_grid.py", "status": "Pending"},
+        {"id": "E2", "name": "notebooks/02_label_generation.ipynb (manual verification)", "status": "Pending"},
+        {"id": "E3", "name": "src/preprocess/geocode_events.py", "status": "Pending"},
+        {"id": "E4", "name": "src/preprocess/generate_labels.py", "status": "Pending"}
+      ]
+    },
+    {
+      "phase": "F",
+      "name": "NEA Rainfall Collection & Feature Engineering",
+      "tasks": [
+        {"id": "F1", "name": "src/collect/nea_rainfall.py", "status": "Pending"},
+        {"id": "F2", "name": "src/preprocess/feature_engineering.py", "status": "Pending"}
+      ]
+    },
+    {
+      "phase": "G",
+      "name": "ML Model",
+      "tasks": [
+        {"id": "G1", "name": "src/model/train.py", "status": "Pending"},
+        {"id": "G2", "name": "src/model/evaluate.py", "status": "Pending"}
+      ]
+    },
+    {
+      "phase": "H",
+      "name": "Research Notebooks",
+      "tasks": [
+        {"id": "H1", "name": "notebooks/01_eda.ipynb", "status": "Pending"},
+        {"id": "H2", "name": "notebooks/02_label_generation.ipynb", "status": "Pending"},
+        {"id": "H3", "name": "notebooks/03_feature_engineering.ipynb", "status": "Pending"},
+        {"id": "H4", "name": "notebooks/04_model_training.ipynb", "status": "Pending"},
+        {"id": "H5", "name": "notebooks/05_evaluation_and_maps.ipynb", "status": "Pending"}
+      ]
+    },
+    {
+      "phase": "I",
+      "name": "Streamlit Frontend Dashboard",
+      "tasks": [
+        {"id": "I1", "name": "app/app.py (main entrypoint)", "status": "Pending"},
+        {"id": "I2", "name": "app/pages/flood_map.py", "status": "Pending"},
+        {"id": "I3", "name": "app/pages/event_browser.py", "status": "Pending"},
+        {"id": "I4", "name": "app/pages/model_dashboard.py", "status": "Pending"},
+        {"id": "I5", "name": "app/pages/rainfall_explorer.py", "status": "Pending"}
+      ]
+    }
+  ]
+}
