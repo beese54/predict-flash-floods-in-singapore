@@ -53,6 +53,7 @@ def _load_location_ref(path: Path) -> dict[str, tuple[float, float]]:
 
 _SIMPLIFY_RE = [
     re.compile(r"\s+from\s+.+?\s+to\s+.+", re.IGNORECASE),       # "from X to Y"
+    re.compile(r"\s*\[[^\]]*\]", re.IGNORECASE),                   # "[anything]" incl. time tags like "[15:46 hours]"
     re.compile(r"\s*\([^)]+\)", re.IGNORECASE),                    # "(anything)"
     re.compile(r"\s+(near|towards|before|between|via)\s+.+", re.IGNORECASE),
     re.compile(r"\s+(slip road|slip rd)\s+.+", re.IGNORECASE),
@@ -283,5 +284,108 @@ def geocode_events(root: Path) -> None:
     log.info(f"Saved → {out_path}")
 
 
+def geocode_risk_events(root: Path) -> None:
+    """Geocode FLOOD_RISK events from extracted_events.json → flood_risk_events.parquet.
+    These are used as class-1 (precursor) labels in the ordinal ML model.
+    """
+    extracted_path = root / "data" / "processed" / "extracted_events.json"
+    grid_path = root / "data" / "processed" / "singapore_grid.geojson"
+
+    if not extracted_path.exists():
+        log.warning("extracted_events.json not found — skipping FLOOD_RISK geocoding")
+        return
+
+    with open(extracted_path, encoding="utf-8") as f:
+        extracted = json.load(f)
+
+    risk_events = [
+        e for e in extracted
+        if e.get("message_type") == "FLOOD_RISK" and e.get("flooded_locations")
+    ]
+    if not risk_events:
+        log.info("No FLOOD_RISK events found in extracted_events.json")
+        return
+
+    grid_gdf = gpd.read_file(grid_path)
+    geocoder = Nominatim(user_agent="sg_flash_flood_project_risk")
+
+    _known: dict[str, tuple[float, float]] = {
+        "Enterprise Road, Singapore": (1.3342, 103.7073),
+        "Upper Jurong Road, Singapore": (1.3370, 103.7133),
+        "Tanjong Pagar Road, Singapore": (1.2787, 103.8442),
+        "Teck Whye Lane, Singapore": (1.3607, 103.7597),
+        "Bukit Timah Road, Singapore": (1.3440, 103.7789),
+        "Orchard Road, Singapore": (1.3048, 103.8318),
+        "Jurong East, Singapore": (1.3329, 103.7436),
+        "Jurong West, Singapore": (1.3404, 103.7090),
+        "Yishun, Singapore": (1.4285, 103.8380),
+        "Ang Mo Kio, Singapore": (1.3691, 103.8454),
+        "Tampines, Singapore": (1.3496, 103.9568),
+        "Bedok, Singapore": (1.3236, 103.9273),
+        "Woodlands, Singapore": (1.4367, 103.7864),
+        "Sengkang, Singapore": (1.3914, 103.8950),
+        "Punggol, Singapore": (1.4043, 103.9021),
+        "Hougang, Singapore": (1.3712, 103.8930),
+        "Clementi, Singapore": (1.3162, 103.7649),
+        "Pasir Ris, Singapore": (1.3730, 103.9490),
+        "Choa Chu Kang, Singapore": (1.3855, 103.7450),
+        "Bukit Batok, Singapore": (1.3590, 103.7637),
+    }
+
+    rows = []
+    for ev_idx, ev in enumerate(risk_events):
+        event_dt_str = ev.get("event_datetime")
+        date_str = ev.get("date", "")
+
+        for loc_str in ev["flooded_locations"]:
+            # Strip time tags and brackets from location strings (e.g. "[15:46 hours]")
+            clean_loc = _simplify_for_geocoding(loc_str)
+            loc_sg = clean_loc if "singapore" in clean_loc.lower() else f"{clean_loc}, Singapore"
+
+            coords = _known.get(loc_sg) or _known.get(loc_str)
+            if coords is None:
+                coords = _geocode_nominatim(geocoder, loc_sg)
+                time.sleep(GEOCODER_DELAY)
+            if coords is None:
+                simplified = _simplify_for_geocoding(loc_sg)
+                if simplified != loc_sg:
+                    coords = _geocode_nominatim(geocoder, simplified)
+                    time.sleep(GEOCODER_DELAY)
+            if coords is None:
+                log.warning(f"  Cannot geocode FLOOD_RISK location: {loc_str}")
+                continue
+
+            lat, lon = coords
+            if not _in_singapore(lat, lon):
+                log.warning(f"  Out of SG bounds: {loc_str} → ({lat:.4f}, {lon:.4f})")
+                continue
+
+            pt = Point(lon, lat)
+            matches = grid_gdf[grid_gdf.contains(pt)]
+            grid_cell_id = matches.iloc[0]["grid_cell_id"] if len(matches) > 0 else None
+
+            rows.append({
+                "event_id": ev_idx,
+                "source": "pub_telegram",
+                "source_row_id": ev.get("source_row_id"),
+                "date": date_str,
+                "event_datetime": event_dt_str,
+                "message_type": "FLOOD_RISK",
+                "location_str": loc_sg,
+                "lat": lat,
+                "lon": lon,
+                "grid_cell_id": grid_cell_id,
+            })
+
+    if rows:
+        df = pd.DataFrame(rows)
+        out_path = root / "data" / "processed" / "flood_risk_events.parquet"
+        df.to_parquet(out_path, index=False)
+        log.info(f"FLOOD_RISK: geocoded {len(df)} location rows from {len(risk_events)} events → {out_path.name}")
+    else:
+        log.warning("FLOOD_RISK geocoding: no rows produced")
+
+
 if __name__ == "__main__":
     geocode_events(project_root())
+    geocode_risk_events(project_root())

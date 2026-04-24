@@ -25,7 +25,12 @@ llm:
 labels:
   flood_radius_km: 1.0          # Radius around geocoded flood point to mark as flooded
   time_window_hours: 3          # ±N hours around event to mark as flood=1
-  prediction_horizon_hours: 6   # Predict flood within next N hours
+  prediction_horizon_hours: 6   # Kept for backward compat — use prediction_horizons below
+  prediction_horizons: [0.5, 6.0]  # 30-min (operational) and 6-hour (early warning) models
+  flood_classes:                    # Ordinal: 0=normal, 1=flood_risk, 2=flash_flood
+    0: normal
+    1: flood_risk
+    2: flash_flood
 
 # Feature engineering
 features:
@@ -40,9 +45,9 @@ nea:
 
 # ML model
 model:
-  train_end_date: "2022-12-31"
-  val_end_date: "2023-12-31"
-  # test: 2024-01-01 to end_date
+  train_end_date: "2025-06-30"
+  val_end_date: "2025-12-31"
+  # test: 2026-01-01 to end_date
 
 # Streamlit
 app:

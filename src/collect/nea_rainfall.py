@@ -16,6 +16,7 @@ Usage:
 import argparse
 import json
 import logging
+import shutil
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -104,10 +105,12 @@ def download_year(year: int, out_dir: Path, config: dict) -> None:
         log.info(f"  {parquet_path.name} already exists — skipping.")
         return
 
+    ckpt_dir = out_dir / "tmp" / str(year)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
     cfg_start = config["data"]["start_date"]
     cfg_end   = config["data"]["end_date"]
 
-    # Date range for this year
     year_start = date(year, 1, 1)
     if year == int(cfg_start[:4]):
         year_start = date.fromisoformat(cfg_start)
@@ -118,11 +121,9 @@ def download_year(year: int, out_dir: Path, config: dict) -> None:
 
     log.info(f"Downloading year {year}: {year_start} → {year_end} ...")
 
-    all_rows: list[dict] = []
     all_stations: dict[str, dict] = {}
     stations_path = out_dir / "stations.json"
 
-    # Load existing station metadata to merge into
     if stations_path.exists():
         with open(stations_path) as f:
             for s in json.load(f):
@@ -134,30 +135,36 @@ def download_year(year: int, out_dir: Path, config: dict) -> None:
 
     with requests.Session() as session:
         while current <= year_end:
-            stations, rows = _fetch_day(current, session)
-            all_rows.extend(rows)
-            for s in stations:
-                all_stations[s["station_id"]] = s
+            day_ckpt = ckpt_dir / f"{current}.parquet"
+            if not day_ckpt.exists():
+                stations, rows = _fetch_day(current, session)
+                for s in stations:
+                    all_stations[s["station_id"]] = s
+                pd.DataFrame(rows).to_parquet(day_ckpt, index=False)
+                time.sleep(REQUEST_DELAY)
             done += 1
             if done % 30 == 0 or done == total_days:
-                log.info(f"  {year}: {done}/{total_days} days done, {len(all_rows):,} readings so far")
+                log.info(f"  {year}: {done}/{total_days} days done")
             current += timedelta(days=1)
-            time.sleep(REQUEST_DELAY)
 
-    if all_rows:
-        df = pd.DataFrame(all_rows)
+    # Merge daily checkpoints into final parquet
+    day_dfs = [pd.read_parquet(f) for f in sorted(ckpt_dir.glob("*.parquet"))]
+    non_empty = [df for df in day_dfs if not df.empty]
+    if non_empty:
+        df = pd.concat(non_empty, ignore_index=True)
         df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.tz_convert("Asia/Singapore").dt.tz_localize(None)
         df = df.sort_values(["timestamp", "station_id"]).reset_index(drop=True)
-        out_dir.mkdir(parents=True, exist_ok=True)
         df.to_parquet(parquet_path, index=False)
         log.info(f"  Saved {len(df):,} rows → {parquet_path.name}")
     else:
         log.warning(f"  No data collected for year {year}")
 
-    # Save updated station metadata
     with open(stations_path, "w") as f:
         json.dump(list(all_stations.values()), f, indent=2)
     log.info(f"  Station metadata: {len(all_stations)} stations → stations.json")
+
+    shutil.rmtree(ckpt_dir)
+    log.info(f"  Checkpoints cleaned up for {year}")
 
 
 def main(target_year: int | None = None, start_year: int | None = None) -> None:

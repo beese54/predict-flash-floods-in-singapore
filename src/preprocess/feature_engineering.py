@@ -15,6 +15,8 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from src.utils import get_config, project_root
 
@@ -75,23 +77,23 @@ def _idw_interpolate(rain_wide: pd.DataFrame, W: np.ndarray) -> pd.DataFrame:
 
 # ── Rolling feature computation ───────────────────────────────────────────────
 
-def _rolling_features(
+def _rolling_features_chunked(
     cell_rain_wide: pd.DataFrame,  # index=timestamp (5-min), columns=cell_idx (int position)
     grid_cell_ids: list,
     windows_hours: list[float],
-) -> pd.DataFrame:
+    chunk_size: int = 50,
+):
     """
-    Compute rolling cumulative rainfall and derived features for every grid cell.
-    Returns long DataFrame: timestamp, grid_cell_id, rain_Xhr, ..., hour, month, ...
+    Yield rolling feature DataFrames in chunks of `chunk_size` cells to avoid OOM
+    on full-year data (105k timestamps x 1887 cells x 13 float64 cols ~ 15 GB).
     """
-    results = []
     n_cells = cell_rain_wide.shape[1]
-
     window_steps = {h: max(1, int(h * 60 / 5)) for h in windows_hours}
     steps_48h = int(48 * 60 / 5)
     steps_1h = int(1 * 60 / 5)
     steps_30min = int(0.5 * 60 / 5)
 
+    chunk = []
     for col_idx in range(n_cells):
         series = cell_rain_wide.iloc[:, col_idx]
         cell_id = grid_cell_ids[col_idx]
@@ -103,25 +105,24 @@ def _rolling_features(
             label = f"rain_{int(h*60) if h < 1 else int(h)}{'min' if h < 1 else 'hr'}"
             feat[label] = series.rolling(window_steps[h], min_periods=1).sum()
 
-        # 48-hour antecedent rainfall (soil saturation proxy)
         feat["rain_48hr"] = series.rolling(steps_48h, min_periods=1).sum()
-
-        # Peak 5-min intensity within last hour
         feat["max_intensity_1hr"] = series.rolling(steps_1h, min_periods=1).max()
 
-        # Rate of change: 30-min rainfall delta (ramp-up indicator)
         rolling_30 = series.rolling(steps_30min, min_periods=1).sum()
         feat["rain_delta_30min"] = rolling_30.diff(steps_30min).fillna(0)
 
-        # Dry spell: hours since last non-zero 5-min reading
-        # Computed as cumulative zeros × 5 min / 60
         is_dry = (series == 0).astype(int)
         dry_streak = is_dry * (is_dry.groupby((is_dry != is_dry.shift()).cumsum()).cumcount() + 1)
         feat["dry_spell_hours"] = (dry_streak * 5 / 60).round(2)
 
-        results.append(feat.reset_index().rename(columns={"index": "timestamp"}))
+        chunk.append(feat.reset_index().rename(columns={"index": "timestamp"}))
 
-    return pd.concat(results, ignore_index=True)
+        if len(chunk) >= chunk_size:
+            yield pd.concat(chunk, ignore_index=True)
+            chunk = []
+
+    if chunk:
+        yield pd.concat(chunk, ignore_index=True)
 
 
 def _add_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -168,12 +169,19 @@ def _process_year(
     log.info(f"  {year}: IDW interpolation ({len(rain_wide)} timestamps × {len(grid_cell_ids)} cells) ...")
     cell_rain_wide = _idw_interpolate(rain_wide, W)
 
-    log.info(f"  {year}: computing rolling features ...")
-    features_df = _rolling_features(cell_rain_wide, grid_cell_ids, windows_hours)
-    features_df = _add_temporal_features(features_df)
-
-    features_df.to_parquet(cache_path, index=False)
-    log.info(f"  {year}: saved → {cache_path.name} ({len(features_df):,} rows)")
+    log.info(f"  {year}: computing rolling features (chunked) ...")
+    writer = None
+    total_rows = 0
+    for chunk_df in _rolling_features_chunked(cell_rain_wide, grid_cell_ids, windows_hours):
+        chunk_df = _add_temporal_features(chunk_df)
+        table = pa.Table.from_pandas(chunk_df, preserve_index=False)
+        if writer is None:
+            writer = pq.ParquetWriter(str(cache_path), table.schema)
+        writer.write_table(table)
+        total_rows += len(chunk_df)
+    if writer:
+        writer.close()
+    log.info(f"  {year}: saved → {cache_path.name} ({total_rows:,} rows)")
     return cache_path
 
 
@@ -225,18 +233,46 @@ def build_dataset(root: Path, config: dict, force_years: list[int] | None = None
         )
         cached_paths.append(cache)
 
-    # ── Merge all cached year features + labels ───────────────────────────────
+    # ── Merge cached year features with labels (year-by-year to avoid OOM) ──────
     log.info("Merging cached features with labels ...")
-    features_df = pd.concat([pd.read_parquet(p) for p in cached_paths], ignore_index=True)
-    features_df["timestamp"] = pd.to_datetime(features_df["timestamp"])
-
     labels = pd.read_parquet(labels_path)
     labels["timestamp"] = pd.to_datetime(labels["timestamp"])
+    labels["_year"] = labels["timestamp"].dt.year
 
-    ml_df = labels.merge(features_df, on=["grid_cell_id", "timestamp"], how="left")
+    grid_meta = grid[["grid_cell_id", "lat_centroid", "lon_centroid"]]
+    merged_chunks = []
+
+    for cache_path in cached_paths:
+        year = int(cache_path.stem.split("_")[1])
+        label_year = labels[labels["_year"] == year].copy()
+        if label_year.empty:
+            log.info(f"  {year}: no label rows, skipping")
+            continue
+
+        log.info(f"  {year}: matching {len(label_year):,} label rows against features ...")
+        label_keys = label_year[["grid_cell_id", "timestamp"]]
+
+        # Read feature file in batches, keep only rows that match a label key
+        pf = pq.ParquetFile(cache_path)
+        year_feat_chunks = []
+        for batch in pf.iter_batches(batch_size=5_000_000):
+            feat_chunk = batch.to_pandas()
+            feat_chunk["timestamp"] = pd.to_datetime(feat_chunk["timestamp"])
+            matched = feat_chunk.merge(label_keys, on=["grid_cell_id", "timestamp"], how="inner")
+            if not matched.empty:
+                year_feat_chunks.append(matched)
+
+        if year_feat_chunks:
+            feat_year = pd.concat(year_feat_chunks, ignore_index=True)
+            chunk = label_year.merge(feat_year, on=["grid_cell_id", "timestamp"], how="left")
+        else:
+            chunk = label_year.copy()
+        merged_chunks.append(chunk)
+        log.info(f"  {year}: merged {len(chunk):,} rows")
+
+    ml_df = pd.concat(merged_chunks, ignore_index=True).drop(columns=["_year"])
 
     # Merge grid centroid info
-    grid_meta = grid[["grid_cell_id", "lat_centroid", "lon_centroid"]]
     ml_df = ml_df.merge(grid_meta, on="grid_cell_id", how="left")
 
     nan_rate = ml_df.isnull().mean()
