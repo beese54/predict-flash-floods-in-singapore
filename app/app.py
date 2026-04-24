@@ -31,11 +31,13 @@ st.markdown(
 Welcome to the research dashboard for the Singapore flash flood ML pipeline.
 
 **Data sources:**
-- Straits Times flood articles (2016–2026)
-- PUB Telegram flood alerts (2022–2026)
+- Straits Times flood articles (2015–2026)
+- PUB Telegram flood alerts (2022–2026) — [Risk of Flash Floods] and [FLASH FLOOD OCCURRED]
 - NEA 5-minute rainfall data (~60 stations, Dec 2016–present)
 
-**Model:** LightGBM binary classifier predicting flood probability at 1km × 1km resolution, 6 hours ahead.
+**Models:** Ordinal 3-class LightGBM (0 = normal · 1 = flood risk · 2 = flash flood)
+- **30-min model** — operational precision: is flooding imminent right now?
+- **6-hour model** — early warning: should resources be pre-positioned?
 
 Use the sidebar to navigate between pages.
 """
