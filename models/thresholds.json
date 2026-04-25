@@ -1,0 +1,10 @@
+{
+  "lgbm_30min_v2": {
+    "flood_risk": 0.02,
+    "flash_flood": 0.01
+  },
+  "lgbm_6h_v2": {
+    "flood_risk": 0.01,
+    "flash_flood": 0.34
+  }
+}

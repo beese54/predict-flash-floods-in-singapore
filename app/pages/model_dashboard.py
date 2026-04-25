@@ -17,7 +17,7 @@ st.set_page_config(page_title="Model Dashboard", layout="wide")
 st.title("📊 Model Evaluation Dashboard")
 
 CLASS_NAMES  = ["normal", "flood_risk", "flash_flood"]
-CLASS_LABELS = ["Normal", "Flood Risk\n(drain ≥90%)", "Flash Flood\n(confirmed)"]
+CLASS_LABELS = ["Normal", "Flood Risk\n(CCTV / drain sensors)", "Flash Flood\n(confirmed)"]
 CLASS_COLORS = ["#2ecc71", "#f39c12", "#e74c3c"]
 
 
@@ -137,6 +137,47 @@ with row1_r:
         st.plotly_chart(fig_cm, use_container_width=True)
     else:
         st.dataframe(cm_df.style.background_gradient(cmap="Blues"), use_container_width=False)
+
+# ── Events-Only Confusion Matrix (2026 flood events) ─────────────────────────
+if is_multiclass and "events_confusion_matrix" in data:
+    st.subheader("Events-Only Confusion Matrix — 2026 Flood Events")
+    st.caption(
+        "Rows show only the actual flood events (class > 0). "
+        "Isolates model performance on the events that matter, "
+        "without the overwhelming Normal background (~95% of rows)."
+    )
+    ev_cm      = data["events_confusion_matrix"]            # shape (2, 3)
+    row_labels = data["events_confusion_matrix_row_labels"] # ["flood_risk", "flash_flood"]
+    col_labels = data["events_confusion_matrix_col_labels"] # CLASS_NAMES
+
+    # Annotate each cell with count + recall percentage
+    row_totals = [sum(row) for row in ev_cm]
+    text_ev = [
+        [f"{v}\n({v/max(row_totals[r],1)*100:.0f}%)" for v in row]
+        for r, row in enumerate(ev_cm)
+    ]
+
+    fig_ev = go.Figure(go.Heatmap(
+        z=ev_cm, x=col_labels, y=row_labels,
+        colorscale="Reds", showscale=False,
+        text=text_ev, texttemplate="%{text}",
+    ))
+    fig_ev.update_layout(
+        xaxis_title="Predicted", yaxis_title="Actual (events only)",
+        height=280, margin={"l": 10, "r": 10, "t": 20, "b": 40}
+    )
+    st.plotly_chart(fig_ev, use_container_width=True)
+
+    # Recall summary for events
+    ev_counts = data["test_class_counts"]
+    n_risk  = ev_counts.get("flood_risk", 0)
+    n_flood = ev_counts.get("flash_flood", 0)
+    if n_risk > 0 and n_flood > 0:
+        recall_risk  = ev_cm[0][1] / n_risk  * 100   # TP flood_risk / actual flood_risk
+        recall_flood = ev_cm[1][2] / n_flood * 100   # TP flash_flood / actual flash_flood
+        c1, c2 = st.columns(2)
+        c1.metric("Recall — Flood Risk",  f"{recall_risk:.1f}%",  f"{ev_cm[0][1]} of {n_risk} detected")
+        c2.metric("Recall — Flash Flood", f"{recall_flood:.1f}%", f"{ev_cm[1][2]} of {n_flood} detected")
 
 # ── Calibration (legacy only) ─────────────────────────────────────────────────
 if not is_multiclass and "calibration_data" in data:

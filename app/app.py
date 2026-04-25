@@ -17,7 +17,8 @@ st.sidebar.markdown(
     """
 **Navigation**
 Use the pages below to explore the system:
-- **Flood Map** — Predicted flood probability across Singapore
+- **Live Prediction** — Fetch live NEA data and predict current flood risk
+- **Flood Map** — Historical flood probability replay across Singapore
 - **Event Browser** — Historical verified flood events
 - **Model Dashboard** — Evaluation metrics and feature importance
 - **Rainfall Explorer** — NEA rainfall time-series
@@ -35,7 +36,11 @@ Welcome to the research dashboard for the Singapore flash flood ML pipeline.
 - PUB Telegram flood alerts (2022–2026) — [Risk of Flash Floods] and [FLASH FLOOD OCCURRED]
 - NEA 5-minute rainfall data (~60 stations, Dec 2016–present)
 
-**Models:** Ordinal 3-class LightGBM (0 = normal · 1 = flood risk · 2 = flash flood)
+**Models:** Ordinal 3-class LightGBM
+- **Class 0 — Normal:** no flood risk
+- **Class 1 — Flood Risk:** PUB's CCTV and drain level sensors have triggered a risk-of-flash-flood warning
+- **Class 2 — Flash Flood:** a confirmed flash flood event has occurred
+
 - **30-min model** — operational precision: is flooding imminent right now?
 - **6-hour model** — early warning: should resources be pre-positioned?
 

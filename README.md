@@ -12,7 +12,10 @@ Inspired by [Google DeepMind's Groundsource](https://deepmind.google/discover/bl
 2. **Extracts** structured flood data (dates, locations) using an LLM pipeline
 3. **Geocodes** locations onto a 1 km × 1 km grid covering Singapore's land area
 4. **Engineers features** by spatially interpolating NEA rain gauge readings onto the grid and computing rolling rainfall accumulation windows
-5. **Trains** a LightGBM binary classifier to predict flood probability per grid cell, 24 hours ahead
+5. **Trains** a LightGBM ordinal 3-class classifier per grid cell, at two horizons (30 min and 6 hours):
+   - **Class 0 — Normal:** baseline conditions
+   - **Class 1 — Flood Risk:** PUB's CCTV and drain level sensors have triggered a risk-of-flash-flood warning
+   - **Class 2 — Flash Flood:** a confirmed flash flood event has occurred
 6. **Serves** predictions and historical data through an interactive Streamlit dashboard
 
 ---
@@ -31,12 +34,14 @@ Preprocessing
 └── Feature engineering (IDW interpolation + rolling sums) ──► ml_dataset.parquet
 
 Model
-└── LightGBM binary classifier  ──► lgbm_flood_v1.pkl
+├── LightGBM 3-class ordinal (30-min horizon)  ──► lgbm_30min_v2.pkl
+└── LightGBM 3-class ordinal (6-hour horizon)  ──► lgbm_6h_v2.pkl
 
 Dashboard (Streamlit)
-├── Flood Map          — predicted probability heatmap
+├── Live Prediction    — fetch current NEA data and predict risk right now
+├── Flood Map          — historical flood probability replay across the grid
 ├── Event Browser      — historical verified flood events
-├── Model Dashboard    — AUC-ROC, PR curve, feature importance
+├── Model Dashboard    — multiclass metrics, feature importance, confusion matrix
 ├── Rainfall Explorer  — NEA station time-series with flood overlays
 └── Location Annotator — manual ground-truth annotation tool
 ```
@@ -149,6 +154,7 @@ predict_flash_flood/
 ├── app/                    # Streamlit dashboard
 │   ├── app.py
 │   └── pages/
+│       ├── live_prediction.py
 │       ├── flood_map.py
 │       ├── event_browser.py
 │       ├── model_dashboard.py
