@@ -199,6 +199,12 @@ Python · LightGBM · GeoPandas · Folium · Streamlit · Telethon · OpenAI API
 
 ---
 
+## Acknowledgements
+
+Special thanks to **Yossi Matias, Gila Loike, Juliet Rothenberg, Oleg Zlydenko**, and the broader Google team whose work on [Groundsource](https://deepmind.google/discover/blog/groundsource-a-global-dataset-of-flood-events/) inspired this project.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE)
