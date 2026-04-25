@@ -59,6 +59,20 @@ Dashboard (Streamlit)
 
 ---
 
+## Reference maps
+
+### PUB Flood-Prone Areas (official)
+Ground truth reference showing areas officially designated as flood-prone by Singapore's national water agency.
+
+![PUB Flood-Prone Areas Map](assets/flood_prone_areas_map_PUB.jpg)
+
+### Historical Flood Frequency (this model)
+Each 1 km² cell coloured by how many times it was labelled a flood event across the full 2016–2026 dataset. Amber = flood risk (CCTV / drain sensors triggered). Red = confirmed flash flood.
+
+![Historical Flood Frequency Map](assets/historical_flood_frequency_map.jpg)
+
+---
+
 ## Setup
 
 ### 1. Clone and install
@@ -151,6 +165,7 @@ This project demonstrates how open, publicly available data can be used to build
 
 ```
 predict_flash_flood/
+├── assets/                 # Reference images for README
 ├── app/                    # Streamlit dashboard
 │   ├── app.py
 │   └── pages/
